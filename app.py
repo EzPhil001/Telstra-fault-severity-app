@@ -15,10 +15,11 @@ st.title("Telstra Fault Severity Prediction with XAI")
 st.write("Predicting network fault severity using Machine Learning + Explainable AI")
 
 # =========================
-# LOAD MODEL
+# LOAD MODEL + SCALER
 # =========================
 
-model = joblib.load("telstra_xai_model.pkl")
+model = joblib.load("telstra_xgboost_model.pkl")
+scaler = joblib.load("scaler.pkl")
 
 # =========================
 # USER INPUTS
@@ -49,10 +50,16 @@ input_data = pd.DataFrame({
 if st.button("Predict Fault Severity"):
 
     # =========================
+    # APPLY SCALER (NEW FIX)
+    # =========================
+
+    input_scaled = scaler.transform(input_data)
+
+    # =========================
     # MODEL PREDICTION
     # =========================
 
-    prediction = model.predict(input_data)[0]
+    prediction = model.predict(input_scaled)[0]
 
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
@@ -82,7 +89,7 @@ if st.button("Predict Fault Severity"):
     st.subheader("SHAP Explanation")
 
     explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(input_data)
+    shap_values = explainer.shap_values(input_scaled)
 
     fig, ax = plt.subplots()
 
@@ -113,7 +120,7 @@ if st.button("Predict Fault Severity"):
     )
 
     exp = explainer_lime.explain_instance(
-        input_data.iloc[0],
+        input_scaled[0],
         model.predict_proba,
         num_features=5
     )
