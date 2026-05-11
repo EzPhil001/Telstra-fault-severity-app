@@ -5,20 +5,20 @@ import shap
 import matplotlib.pyplot as plt
 from lime.lime_tabular import LimeTabularExplainer
 import numpy as np
+import uuid
 
 # =========================
 # PAGE TITLE
 # =========================
 
 st.title("Telstra Fault Severity Prediction with XAI")
-
 st.write("Predicting network fault severity using Machine Learning + Explainable AI")
 
 # =========================
 # LOAD MODEL
 # =========================
 
-model = joblib.load("telstra_xgboost_model.pkl")
+model = joblib.load("telstra_xai_model.pkl")
 
 # =========================
 # USER INPUTS
@@ -52,11 +52,28 @@ if st.button("Predict Fault Severity"):
     # MODEL PREDICTION
     # =========================
 
-    prediction = model.predict(input_data)
+    prediction = model.predict(input_data)[0]
 
     st.subheader("Prediction")
+    st.success(f"Predicted Fault Severity: {prediction}")
 
-    st.success(f"Predicted Fault Severity: {prediction[0]}")
+    # =========================
+    # CONDITIONAL LOGIC (NEW FEATURE)
+    # =========================
+
+    if prediction in [1, 2]:
+
+        st.warning("High severity fault detected — additional details required")
+
+        location = st.text_input("Enter Location")
+
+        if location:
+
+            unique_id = str(uuid.uuid4())
+
+            st.subheader("Fault Tracking Info")
+            st.write("Location:", location)
+            st.write("Generated Unique ID:", unique_id)
 
     # =========================
     # SHAP EXPLANATION
@@ -65,7 +82,6 @@ if st.button("Predict Fault Severity"):
     st.subheader("SHAP Explanation")
 
     explainer = shap.TreeExplainer(model)
-
     shap_values = explainer.shap_values(input_data)
 
     fig, ax = plt.subplots()
