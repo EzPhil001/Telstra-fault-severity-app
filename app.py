@@ -53,7 +53,7 @@ if st.button("Predict Fault Severity"):
     # APPLY SCALER (NEW FIX)
     # =========================
 
-    input_scaled = scaler.transform(input_data)
+    input_scaled = scaler.transform(input_data.values)
 
     # =========================
     # MODEL PREDICTION
