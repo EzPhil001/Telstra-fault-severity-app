@@ -52,7 +52,7 @@ if st.button("Predict Fault Severity"):
     # PREDICTION
     # =========================
 
-    prediction = model.predict(input_data)[0]
+    prediction = model.predict(input_data.values)[0]
 
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
@@ -82,7 +82,7 @@ if st.button("Predict Fault Severity"):
     st.subheader("SHAP Explanation")
 
     explainer = shap.TreeExplainer(model.named_steps["model"])
-    shap_values = explainer.shap_values(input_data)
+    shap_values = explainer.shap_values(input_data.values)
 
     fig, ax = plt.subplots()
 
