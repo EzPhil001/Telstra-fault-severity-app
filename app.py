@@ -15,11 +15,10 @@ st.title("Telstra Fault Severity Prediction with XAI")
 st.write("Predicting network fault severity using Machine Learning + Explainable AI")
 
 # =========================
-# LOAD MODEL + SCALER
+# LOAD PIPELINE MODEL
 # =========================
 
-model = joblib.load("telstra_xgboost_model.pkl")
-scaler = joblib.load("scaler.pkl")
+model = joblib.load("telstra_pipeline.pkl")
 
 # =========================
 # USER INPUTS
@@ -50,22 +49,16 @@ input_data = pd.DataFrame({
 if st.button("Predict Fault Severity"):
 
     # =========================
-    # APPLY SCALER (NEW FIX)
+    # PREDICTION
     # =========================
 
-    input_scaled = scaler.transform(input_data.values)
-
-    # =========================
-    # MODEL PREDICTION
-    # =========================
-
-    prediction = model.predict(input_scaled)[0]
+    prediction = model.predict(input_data)[0]
 
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
 
     # =========================
-    # CONDITIONAL LOGIC (NEW FEATURE)
+    # CONDITIONAL LOGIC
     # =========================
 
     if prediction in [1, 2]:
@@ -88,8 +81,8 @@ if st.button("Predict Fault Severity"):
 
     st.subheader("SHAP Explanation")
 
-    explainer = shap.TreeExplainer(model)
-    shap_values = explainer.shap_values(input_scaled)
+    explainer = shap.TreeExplainer(model.named_steps["model"])
+    shap_values = explainer.shap_values(input_data)
 
     fig, ax = plt.subplots()
 
@@ -120,7 +113,7 @@ if st.button("Predict Fault Severity"):
     )
 
     exp = explainer_lime.explain_instance(
-        input_scaled[0],
+        input_data.iloc[0],
         model.predict_proba,
         num_features=5
     )
