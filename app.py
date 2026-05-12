@@ -1,9 +1,12 @@
+# =========================
+# IMPORTS
+# =========================
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
 import shap
 import matplotlib.pyplot as plt
-import numpy as np
 import uuid
 from lime.lime_tabular import LimeTabularExplainer
 
@@ -35,14 +38,17 @@ if "show_location" not in st.session_state:
 if "prediction" not in st.session_state:
     st.session_state.prediction = None
 
+
 # =========================
 # INPUTS
 # =========================
-log_feature = st.number_input("Log Feature")
-event_type = st.number_input("Event Type")
-log_volume = st.number_input("Log Volume")
-severity_type = st.number_input("Severity Type")
-resource_type = st.number_input("Resource Type")
+st.subheader("Enter Fault Features")
+
+log_feature = st.number_input("Log Feature", value=0.0)
+event_type = st.number_input("Event Type", value=0.0)
+log_volume = st.number_input("Log Volume", value=0.0)
+severity_type = st.number_input("Severity Type", value=0.0)
+resource_type = st.number_input("Resource Type", value=0.0)
 
 user_input = {
     "log_feature": log_feature,
@@ -52,8 +58,9 @@ user_input = {
     "resource_type": resource_type
 }
 
-# enforce training feature order
+# enforce correct feature order
 input_data = pd.DataFrame([user_input]).reindex(columns=feature_columns)
+
 
 # =========================
 # PREDICTION
@@ -68,13 +75,14 @@ if st.button("Predict Fault Severity"):
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
 
-    # HIGH SEVERITY LOGIC
+    # high severity rule
     if prediction in [1, 2]:
-        st.warning("High severity fault detected")
+        st.warning("High severity fault detected 🚨")
         st.session_state.show_location = True
     else:
         st.session_state.show_location = False
         st.session_state.ticket_id = None
+
 
 # =========================
 # LOCATION + TICKET SYSTEM
@@ -84,15 +92,15 @@ if st.session_state.show_location:
     location = st.text_input("Enter Location", key="location_input")
 
     if location:
-
         if st.session_state.ticket_id is None:
             st.session_state.ticket_id = str(uuid.uuid4())
 
         st.write("📍 Location:", location)
         st.write("🎫 Ticket ID:", st.session_state.ticket_id)
 
+
 # =========================
-# SHAP EXPLANATION (FIXED FULL VERSION)
+# SHAP EXPLANATION
 # =========================
 if st.session_state.prediction_made:
 
@@ -101,14 +109,18 @@ if st.session_state.prediction_made:
     explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer.shap_values(input_data)
 
-    # Handle binary vs multiclass safely
+    pred_class = int(st.session_state.prediction)
+
+    # FIX: multiclass vs binary handling
     if isinstance(shap_values, list):
-        shap_vals = shap_values[st.session_state.prediction]
+        shap_vals = shap_values[pred_class][0]
     else:
         shap_vals = shap_values[0]
 
+    shap_vals = np.array(shap_vals).reshape(-1)
+
     # =========================
-    # TABLE VIEW
+    # SHAP TABLE
     # =========================
     shap_df = pd.DataFrame({
         "Feature": input_data.columns,
@@ -116,15 +128,18 @@ if st.session_state.prediction_made:
         "SHAP Impact": shap_vals
     })
 
-    st.write("### Feature Contribution to Prediction")
+    st.write("### Feature Contribution Table")
+
     st.dataframe(
-        shap_df.sort_values(by="SHAP Impact", key=abs, ascending=False)
+        shap_df.reindex(
+            shap_df["SHAP Impact"].abs().sort_values(ascending=False).index
+        )
     )
 
     # =========================
-    # BAR CHART VIEW (MATPLOTLIB)
+    # SHAP BAR PLOT
     # =========================
-    st.write("### Visual Impact View")
+    st.write("### SHAP Visual Impact")
 
     fig, ax = plt.subplots()
 
@@ -134,35 +149,30 @@ if st.session_state.prediction_made:
     )
 
     ax.set_xlabel("SHAP Impact")
-    ax.set_title("Feature Influence on Prediction")
+    ax.set_title("Feature Influence")
 
     st.pyplot(fig)
 
-    # =========================
-    # SHAP NATIVE BAR PLOT (CORRECT SHAP VERSION)
-    # =========================
-    st.write("### SHAP Model View (Advanced)")
-
-    fig2, ax2 = plt.subplots()
-
-    shap.plots.bar(
-        shap_vals,
-        show=False
-    )
-
-    st.pyplot(fig2)
 
 # =========================
-# LIME EXPLANATION
+# LIME EXPLANATION (FIXED)
 # =========================
 if st.session_state.prediction_made:
 
     st.subheader("LIME Explanation")
 
-    dummy_train = np.zeros((100, len(feature_columns)))
+    # IMPORTANT FIX:
+    # LIME needs REAL training data, not zeros
+
+    try:
+        X_train = joblib.load("X_train.pkl")  # recommended file you should save
+
+    except:
+        st.warning("X_train.pkl not found. LIME will be approximate.")
+        X_train = np.tile(input_data.values, (100, 1))
 
     lime_explainer = LimeTabularExplainer(
-        training_data=dummy_train,
+        training_data=X_train,
         feature_names=feature_columns,
         class_names=["0", "1", "2"],
         mode="classification"
@@ -173,4 +183,12 @@ if st.session_state.prediction_made:
         model.predict_proba
     )
 
-    st.dataframe(pd.DataFrame(exp.as_list(), columns=["Feature", "Impact"]))
+    lime_df = pd.DataFrame(exp.as_list(), columns=["Feature", "Impact"])
+    st.dataframe(lime_df)
+
+
+# =========================
+# FOOTER INFO
+# =========================
+st.markdown("---")
+st.caption("Telstra Fault Severity Prediction App | XAI powered by SHAP + LIME")
