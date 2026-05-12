@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 import uuid
 from lime.lime_tabular import LimeTabularExplainer
 
+
 # =========================
 # APP TITLE
 # =========================
 st.title("Telstra Fault Severity Prediction with XAI")
+
 
 # =========================
 # LOAD MODEL + FEATURES
@@ -21,7 +23,6 @@ st.title("Telstra Fault Severity Prediction with XAI")
 model = joblib.load("xgb_pipeline.pkl")
 feature_columns = joblib.load("features.pkl")
 
-xgb_model = model.named_steps["model"]
 
 # =========================
 # SESSION STATE INIT
@@ -50,6 +51,7 @@ log_volume = st.number_input("Log Volume", value=0.0)
 severity_type = st.number_input("Severity Type", value=0.0)
 resource_type = st.number_input("Resource Type", value=0.0)
 
+
 user_input = {
     "log_feature": log_feature,
     "event_type": event_type,
@@ -57,6 +59,7 @@ user_input = {
     "severity_type": severity_type,
     "resource_type": resource_type
 }
+
 
 # enforce correct feature order
 input_data = pd.DataFrame([user_input]).reindex(columns=feature_columns)
@@ -75,7 +78,7 @@ if st.button("Predict Fault Severity"):
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
 
-    # high severity rule
+    # severity rule
     if prediction in [1, 2]:
         st.warning("High severity fault detected 🚨")
         st.session_state.show_location = True
@@ -100,47 +103,33 @@ if st.session_state.show_location:
 
 
 # =========================
-# SHAP EXPLANATION (FIXED)
+# SHAP EXPLANATION (FINAL FIXED VERSION)
 # =========================
 if st.session_state.prediction_made:
 
     st.subheader("SHAP Explanation")
 
-    explainer = shap.TreeExplainer(xgb_model)
-    shap_values = explainer.shap_values(input_data)
-
-    pred_class = int(st.session_state.prediction)
-
     # =========================
-    # SAFE SHAP EXTRACTION
+    # IMPORTANT FIX: USE FULL PIPELINE
     # =========================
-    if isinstance(shap_values, list):
-        shap_vals = shap_values[pred_class]
-    else:
-        shap_vals = shap_values
+    explainer = shap.Explainer(model, input_data)
+    shap_values = explainer(input_data)
 
-    shap_vals = np.array(shap_vals)
-
-    # handle extra dimensions safely
-    if shap_vals.ndim == 3:
-        shap_vals = shap_vals[0]
-
-    if shap_vals.ndim == 2:
-        shap_vals = shap_vals[0]
-
-    shap_vals = shap_vals.flatten()
+    # extract SHAP values for first row
+    shap_vals = shap_values.values[0]
+    shap_vals = np.array(shap_vals).flatten()
 
     # =========================
     # SAFETY CHECK
     # =========================
     if len(shap_vals) != len(input_data.columns):
-        st.error("SHAP mismatch detected. Check model or feature alignment.")
+        st.error("SHAP mismatch detected (feature alignment issue).")
         st.write("SHAP shape:", shap_vals.shape)
         st.write("Feature count:", len(input_data.columns))
         st.stop()
 
     # =========================
-    # SHAP DATAFRAME
+    # BUILD DATAFRAME
     # =========================
     shap_df = pd.DataFrame({
         "Feature": input_data.columns,
@@ -156,8 +145,9 @@ if st.session_state.prediction_made:
 
     st.dataframe(shap_df)
 
+
     # =========================
-    # SHAP BAR CHART
+    # SHAP VISUALIZATION
     # =========================
     st.write("### SHAP Visual Impact")
 
@@ -181,13 +171,14 @@ if st.session_state.prediction_made:
 
     st.subheader("LIME Explanation")
 
-    # try loading real training data
+    # load real training data if available
     try:
         X_train = joblib.load("X_train.pkl")
 
     except:
-        st.warning("X_train.pkl not found. Using fallback synthetic data.")
+        st.warning("X_train.pkl not found. Using fallback approximation.")
         X_train = np.tile(input_data.values, (100, 1))
+
 
     lime_explainer = LimeTabularExplainer(
         training_data=X_train,
@@ -196,10 +187,12 @@ if st.session_state.prediction_made:
         mode="classification"
     )
 
+
     exp = lime_explainer.explain_instance(
         input_data.iloc[0].values,
         model.predict_proba
     )
+
 
     lime_df = pd.DataFrame(exp.as_list(), columns=["Feature", "Impact"])
     st.dataframe(lime_df)
