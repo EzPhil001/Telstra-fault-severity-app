@@ -3,124 +3,91 @@ import pandas as pd
 import joblib
 import shap
 import matplotlib.pyplot as plt
-from lime.lime_tabular import LimeTabularExplainer
 import numpy as np
 import uuid
+from lime.lime_tabular import LimeTabularExplainer
 
 # =========================
-# PAGE TITLE
+# TITLE
 # =========================
-
 st.title("Telstra Fault Severity Prediction with XAI")
-st.write("Predicting network fault severity using Machine Learning + Explainable AI")
 
 # =========================
-# LOAD PIPELINE MODEL
+# LOAD MODEL PIPELINE
 # =========================
-
-model = joblib.load("telstra_pipeline.pkl")
+model = joblib.load("xgb_pipeline.pkl")
 
 # =========================
-# USER INPUTS
+# INPUTS
 # =========================
-
 log_feature = st.number_input("Log Feature")
 event_type = st.number_input("Event Type")
 log_volume = st.number_input("Log Volume")
 severity_type = st.number_input("Severity Type")
 resource_type = st.number_input("Resource Type")
 
-# =========================
-# CREATE INPUT DATAFRAME
-# =========================
-
 input_data = pd.DataFrame({
-    'log_feature': [log_feature],
-    'event_type': [event_type],
-    'log_volume': [log_volume],
-    'severity_type': [severity_type],
-    'resource_type': [resource_type]
+    "log_feature": [log_feature],
+    "event_type": [event_type],
+    "log_volume": [log_volume],
+    "severity_type": [severity_type],
+    "resource_type": [resource_type]
 })
 
 # =========================
-# PREDICT BUTTON
+# PREDICTION
 # =========================
-
 if st.button("Predict Fault Severity"):
 
-    # =========================
-    # PREDICTION
-    # =========================
-
-    prediction = model.predict(input_data.values)[0]
+    prediction = model.predict(input_data)[0]
 
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
 
     # =========================
-    # CONDITIONAL LOGIC
+    # HIGH SEVERITY LOGIC
     # =========================
-
     if prediction in [1, 2]:
-
-        st.warning("High severity fault detected — additional details required")
+        st.warning("High severity fault detected")
 
         location = st.text_input("Enter Location")
 
         if location:
-
-            unique_id = str(uuid.uuid4())
-
-            st.subheader("Fault Tracking Info")
             st.write("Location:", location)
-            st.write("Generated Unique ID:", unique_id)
+            st.write("Ticket ID:", str(uuid.uuid4()))
 
     # =========================
-    # SHAP EXPLANATION
+    # SHAP (CORRECT WAY FOR PIPELINE)
     # =========================
-
     st.subheader("SHAP Explanation")
 
-    explainer = shap.TreeExplainer(model.named_steps["model"])
-    shap_values = explainer.shap_values(input_data.values)
+    # extract model inside pipeline
+    xgb_model = model.named_steps["model"]
+
+    explainer = shap.TreeExplainer(xgb_model)
+    shap_values = explainer.shap_values(input_data)
 
     fig, ax = plt.subplots()
-
-    shap.summary_plot(
-        shap_values,
-        input_data,
-        show=False
-    )
-
+    shap.summary_plot(shap_values, input_data, show=False)
     st.pyplot(fig)
 
     # =========================
-    # LIME EXPLANATION
+    # LIME (IMPORTANT FIX)
     # =========================
-
     st.subheader("LIME Explanation")
 
-    training_data = np.array([
-        [0,0,0,0,0],
-        [1,1,1,1,1]
-    ])
+    dummy_train = np.zeros((10, len(input_data.columns)))
 
-    explainer_lime = LimeTabularExplainer(
-        training_data=training_data,
+    lime_explainer = LimeTabularExplainer(
+        training_data=dummy_train,
         feature_names=input_data.columns.tolist(),
-        class_names=['0','1','2'],
-        mode='classification'
+        class_names=["0", "1", "2"],
+        mode="classification"
     )
 
-    exp = explainer_lime.explain_instance(
-        input_data.iloc[0],
-        model.predict_proba,
-        num_features=5
+    exp = lime_explainer.explain_instance(
+        input_data.iloc[0].values,
+        model.predict_proba
     )
 
-    lime_df = pd.DataFrame(
-        exp.as_list(),
-        columns=['Feature', 'Contribution']
-    )
-
-    st.dataframe(lime_df)
+    st.dataframe(pd.DataFrame(exp.as_list(), columns=["Feature", "Impact"]))
