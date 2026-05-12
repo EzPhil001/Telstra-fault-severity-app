@@ -25,7 +25,7 @@ feature_columns = joblib.load("features.pkl")
 
 
 # =========================
-# SESSION STATE INIT
+# SESSION STATE
 # =========================
 if "prediction_made" not in st.session_state:
     st.session_state.prediction_made = False
@@ -60,7 +60,6 @@ user_input = {
     "resource_type": resource_type
 }
 
-# enforce correct feature order
 input_data = pd.DataFrame([user_input]).reindex(columns=feature_columns)
 
 
@@ -77,7 +76,6 @@ if st.button("Predict Fault Severity"):
     st.subheader("Prediction")
     st.success(f"Predicted Fault Severity: {prediction}")
 
-    # severity rule
     if prediction in [1, 2]:
         st.warning("High severity fault detected 🚨")
         st.session_state.show_location = True
@@ -101,90 +99,65 @@ if st.session_state.show_location:
         st.write("🎫 Ticket ID:", st.session_state.ticket_id)
 
 
-# =========================
-# SHAP EXPLANATION (FINAL FIX)
-# =========================
+# ==========================================================
+# 🔥 SHAP
+# ==========================================================
 if st.session_state.prediction_made:
 
     st.subheader("SHAP Explanation")
 
-    # STEP 1: get transformed input from pipeline
-    transformed_input = model[:-1].transform(input_data)
+    # Use FULL PIPELINE (NO slicing, NO transform)
+    explainer = shap.Explainer(model, input_data)
+    shap_values = explainer(input_data)
 
-    # STEP 2: extract XGBoost model
-    xgb_model = model.named_steps["model"]
+    shap_vals = shap_values.values[0]
+    shap_vals = np.array(shap_vals).flatten()
 
-    explainer = shap.TreeExplainer(xgb_model)
-    shap_values = explainer.shap_values(transformed_input)
-
-    pred_class = int(st.session_state.prediction)
-
-    # STEP 3: handle multiclass output safely
-    if isinstance(shap_values, list):
-        shap_vals = shap_values[pred_class]
-    else:
-        shap_vals = shap_values
-
-    shap_vals = np.array(shap_vals)
-
-    if shap_vals.ndim == 2:
-        shap_vals = shap_vals[0]
-
-    shap_vals = shap_vals.flatten()
-
-    # STEP 4: get correct feature names AFTER preprocessing
-    feature_names = model[:-1].get_feature_names_out()
-
-    # safety check
-    if len(shap_vals) != len(feature_names):
-        st.error("SHAP feature mismatch after transformation.")
+    if len(shap_vals) != len(input_data.columns):
+        st.error("SHAP mismatch error.")
         st.write("SHAP shape:", shap_vals.shape)
-        st.write("Feature count:", len(feature_names))
+        st.write("Features:", len(input_data.columns))
         st.stop()
 
-    # STEP 5: SHAP dataframe
     shap_df = pd.DataFrame({
-        "Feature": feature_names,
+        "Feature": input_data.columns,
         "SHAP Impact": shap_vals
     })
 
-    st.write("### Feature Contribution Table")
-
-    shap_df = shap_df.reindex(
-        shap_df["SHAP Impact"].abs().sort_values(ascending=False).index
-    )
-
+    st.write("### Feature Contribution")
     st.dataframe(shap_df)
 
-    # STEP 6: visualization
-    st.write("### SHAP Visual Impact")
 
     fig, ax = plt.subplots()
-
-    ax.barh(
-        shap_df["Feature"],
-        shap_df["SHAP Impact"]
-    )
-
-    ax.set_xlabel("SHAP Impact")
-    ax.set_title("Feature Influence on Prediction")
-
+    ax.barh(shap_df["Feature"], shap_df["SHAP Impact"])
+    ax.set_title("SHAP Feature Impact")
     st.pyplot(fig)
 
 
-# =========================
-# LIME EXPLANATION (FIXED)
-# =========================
+# ==========================================================
+# 🔥 LIME (WRAPPED FUNCTION APPROACH)
+# ==========================================================
 if st.session_state.prediction_made:
 
     st.subheader("LIME Explanation")
 
-    # load real training data
+    # -------------------------
+    # Load training data
+    # -------------------------
     try:
         X_train = joblib.load("X_train.pkl")
     except:
-        st.warning("X_train.pkl not found. Using fallback approximation.")
+        st.warning("X_train.pkl not found. Using fallback data.")
         X_train = np.repeat(input_data.values, 100, axis=0)
+
+
+    # -------------------------
+    # Wrap pipeline prediction for LIME
+    # -------------------------
+    def predict_fn(x):
+        df = pd.DataFrame(x, columns=feature_columns)
+        return model.predict_proba(df)
+
 
     lime_explainer = LimeTabularExplainer(
         training_data=X_train,
@@ -193,11 +166,13 @@ if st.session_state.prediction_made:
         mode="classification"
     )
 
+
     exp = lime_explainer.explain_instance(
         input_data.iloc[0].values,
-        model.predict_proba,
+        predict_fn,
         num_features=5
     )
+
 
     st.write("### LIME Feature Contributions")
 
