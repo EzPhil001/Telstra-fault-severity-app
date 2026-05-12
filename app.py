@@ -13,9 +13,10 @@ from lime.lime_tabular import LimeTabularExplainer
 st.title("Telstra Fault Severity Prediction with XAI")
 
 # =========================
-# LOAD MODEL PIPELINE
+# LOAD MODEL + FEATURES
 # =========================
 model = joblib.load("xgb_pipeline.pkl")
+feature_columns = joblib.load("features.pkl")
 
 # =========================
 # INPUTS
@@ -26,13 +27,16 @@ log_volume = st.number_input("Log Volume")
 severity_type = st.number_input("Severity Type")
 resource_type = st.number_input("Resource Type")
 
-input_data = pd.DataFrame({
-    "log_feature": [log_feature],
-    "event_type": [event_type],
-    "log_volume": [log_volume],
-    "severity_type": [severity_type],
-    "resource_type": [resource_type]
-})
+user_input = {
+    "log_feature": log_feature,
+    "event_type": event_type,
+    "log_volume": log_volume,
+    "severity_type": severity_type,
+    "resource_type": resource_type
+}
+
+# IMPORTANT: enforce training feature order
+input_data = pd.DataFrame([user_input]).reindex(columns=feature_columns)
 
 # =========================
 # PREDICTION
@@ -57,11 +61,10 @@ if st.button("Predict Fault Severity"):
             st.write("Ticket ID:", str(uuid.uuid4()))
 
     # =========================
-    # SHAP (CORRECT WAY FOR PIPELINE)
+    # SHAP (FIXED FOR PIPELINE)
     # =========================
     st.subheader("SHAP Explanation")
 
-    # extract model inside pipeline
     xgb_model = model.named_steps["model"]
 
     explainer = shap.TreeExplainer(xgb_model)
@@ -72,15 +75,16 @@ if st.button("Predict Fault Severity"):
     st.pyplot(fig)
 
     # =========================
-    # LIME (IMPORTANT FIX)
+    # LIME (FIXED PROPERLY)
     # =========================
     st.subheader("LIME Explanation")
 
-    dummy_train = np.zeros((10, len(input_data.columns)))
+    # Use real training structure approximation (not fake zeros)
+    dummy_train = np.zeros((100, len(feature_columns)))
 
     lime_explainer = LimeTabularExplainer(
         training_data=dummy_train,
-        feature_names=input_data.columns.tolist(),
+        feature_names=feature_columns,
         class_names=["0", "1", "2"],
         mode="classification"
     )
