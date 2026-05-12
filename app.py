@@ -11,7 +11,7 @@ import uuid
 from lime.lime_tabular import LimeTabularExplainer
 
 # =========================
-# TITLE
+# APP TITLE
 # =========================
 st.title("Telstra Fault Severity Prediction with XAI")
 
@@ -40,7 +40,7 @@ if "prediction" not in st.session_state:
 
 
 # =========================
-# INPUTS
+# INPUT SECTION
 # =========================
 st.subheader("Enter Fault Features")
 
@@ -100,7 +100,7 @@ if st.session_state.show_location:
 
 
 # =========================
-# SHAP EXPLANATION
+# SHAP EXPLANATION (FIXED)
 # =========================
 if st.session_state.prediction_made:
 
@@ -111,16 +111,36 @@ if st.session_state.prediction_made:
 
     pred_class = int(st.session_state.prediction)
 
-    # FIX: multiclass vs binary handling
+    # =========================
+    # SAFE SHAP EXTRACTION
+    # =========================
     if isinstance(shap_values, list):
-        shap_vals = shap_values[pred_class][0]
+        shap_vals = shap_values[pred_class]
     else:
-        shap_vals = shap_values[0]
+        shap_vals = shap_values
 
-    shap_vals = np.array(shap_vals).reshape(-1)
+    shap_vals = np.array(shap_vals)
+
+    # handle extra dimensions safely
+    if shap_vals.ndim == 3:
+        shap_vals = shap_vals[0]
+
+    if shap_vals.ndim == 2:
+        shap_vals = shap_vals[0]
+
+    shap_vals = shap_vals.flatten()
 
     # =========================
-    # SHAP TABLE
+    # SAFETY CHECK
+    # =========================
+    if len(shap_vals) != len(input_data.columns):
+        st.error("SHAP mismatch detected. Check model or feature alignment.")
+        st.write("SHAP shape:", shap_vals.shape)
+        st.write("Feature count:", len(input_data.columns))
+        st.stop()
+
+    # =========================
+    # SHAP DATAFRAME
     # =========================
     shap_df = pd.DataFrame({
         "Feature": input_data.columns,
@@ -130,14 +150,14 @@ if st.session_state.prediction_made:
 
     st.write("### Feature Contribution Table")
 
-    st.dataframe(
-        shap_df.reindex(
-            shap_df["SHAP Impact"].abs().sort_values(ascending=False).index
-        )
+    shap_df = shap_df.reindex(
+        shap_df["SHAP Impact"].abs().sort_values(ascending=False).index
     )
 
+    st.dataframe(shap_df)
+
     # =========================
-    # SHAP BAR PLOT
+    # SHAP BAR CHART
     # =========================
     st.write("### SHAP Visual Impact")
 
@@ -149,26 +169,24 @@ if st.session_state.prediction_made:
     )
 
     ax.set_xlabel("SHAP Impact")
-    ax.set_title("Feature Influence")
+    ax.set_title("Feature Influence on Prediction")
 
     st.pyplot(fig)
 
 
 # =========================
-# LIME EXPLANATION (FIXED)
+# LIME EXPLANATION
 # =========================
 if st.session_state.prediction_made:
 
     st.subheader("LIME Explanation")
 
-    # IMPORTANT FIX:
-    # LIME needs REAL training data, not zeros
-
+    # try loading real training data
     try:
-        X_train = joblib.load("X_train.pkl")  # recommended file you should save
+        X_train = joblib.load("X_train.pkl")
 
     except:
-        st.warning("X_train.pkl not found. LIME will be approximate.")
+        st.warning("X_train.pkl not found. Using fallback synthetic data.")
         X_train = np.tile(input_data.values, (100, 1))
 
     lime_explainer = LimeTabularExplainer(
@@ -188,7 +206,7 @@ if st.session_state.prediction_made:
 
 
 # =========================
-# FOOTER INFO
+# FOOTER
 # =========================
 st.markdown("---")
-st.caption("Telstra Fault Severity Prediction App | XAI powered by SHAP + LIME")
+st.caption("Telstra Fault Severity Prediction App | SHAP + LIME Explainability")
