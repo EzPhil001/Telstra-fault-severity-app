@@ -60,7 +60,6 @@ user_input = {
     "resource_type": resource_type
 }
 
-
 # enforce correct feature order
 input_data = pd.DataFrame([user_input]).reindex(columns=feature_columns)
 
@@ -103,37 +102,49 @@ if st.session_state.show_location:
 
 
 # =========================
-# SHAP EXPLANATION (FINAL FIXED VERSION)
+# SHAP EXPLANATION (FINAL FIX)
 # =========================
 if st.session_state.prediction_made:
 
     st.subheader("SHAP Explanation")
 
-    # =========================
-    # IMPORTANT FIX: USE FULL PIPELINE
-    # =========================
-    explainer = shap.Explainer(model, input_data)
-    shap_values = explainer(input_data)
+    # STEP 1: get transformed input from pipeline
+    transformed_input = model[:-1].transform(input_data)
 
-    # extract SHAP values for first row
-    shap_vals = shap_values.values[0]
-    shap_vals = np.array(shap_vals).flatten()
+    # STEP 2: extract XGBoost model
+    xgb_model = model.named_steps["model"]
 
-    # =========================
-    # SAFETY CHECK
-    # =========================
-    if len(shap_vals) != len(input_data.columns):
-        st.error("SHAP mismatch detected (feature alignment issue).")
+    explainer = shap.TreeExplainer(xgb_model)
+    shap_values = explainer.shap_values(transformed_input)
+
+    pred_class = int(st.session_state.prediction)
+
+    # STEP 3: handle multiclass output safely
+    if isinstance(shap_values, list):
+        shap_vals = shap_values[pred_class]
+    else:
+        shap_vals = shap_values
+
+    shap_vals = np.array(shap_vals)
+
+    if shap_vals.ndim == 2:
+        shap_vals = shap_vals[0]
+
+    shap_vals = shap_vals.flatten()
+
+    # STEP 4: get correct feature names AFTER preprocessing
+    feature_names = model[:-1].get_feature_names_out()
+
+    # safety check
+    if len(shap_vals) != len(feature_names):
+        st.error("SHAP feature mismatch after transformation.")
         st.write("SHAP shape:", shap_vals.shape)
-        st.write("Feature count:", len(input_data.columns))
+        st.write("Feature count:", len(feature_names))
         st.stop()
 
-    # =========================
-    # BUILD DATAFRAME
-    # =========================
+    # STEP 5: SHAP dataframe
     shap_df = pd.DataFrame({
-        "Feature": input_data.columns,
-        "Feature Value": input_data.iloc[0].values,
+        "Feature": feature_names,
         "SHAP Impact": shap_vals
     })
 
@@ -145,10 +156,7 @@ if st.session_state.prediction_made:
 
     st.dataframe(shap_df)
 
-
-    # =========================
-    # SHAP VISUALIZATION
-    # =========================
+    # STEP 6: visualization
     st.write("### SHAP Visual Impact")
 
     fig, ax = plt.subplots()
@@ -165,20 +173,18 @@ if st.session_state.prediction_made:
 
 
 # =========================
-# LIME EXPLANATION
+# LIME EXPLANATION (FIXED)
 # =========================
 if st.session_state.prediction_made:
 
     st.subheader("LIME Explanation")
 
-    # load real training data if available
+    # load real training data
     try:
         X_train = joblib.load("X_train.pkl")
-
     except:
         st.warning("X_train.pkl not found. Using fallback approximation.")
-        X_train = np.tile(input_data.values, (100, 1))
-
+        X_train = np.repeat(input_data.values, 100, axis=0)
 
     lime_explainer = LimeTabularExplainer(
         training_data=X_train,
@@ -187,12 +193,13 @@ if st.session_state.prediction_made:
         mode="classification"
     )
 
-
     exp = lime_explainer.explain_instance(
         input_data.iloc[0].values,
-        model.predict_proba
+        model.predict_proba,
+        num_features=5
     )
 
+    st.write("### LIME Feature Contributions")
 
     lime_df = pd.DataFrame(exp.as_list(), columns=["Feature", "Impact"])
     st.dataframe(lime_df)
